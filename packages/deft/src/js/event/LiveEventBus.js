@@ -11,37 +11,41 @@ Open source under the [MIT License](http://en.wikipedia.org/wiki/MIT_License).
 
 Ext.define('Deft.event.LiveEventBus', {
   alternateClassName: ['Deft.LiveEventBus'],
-  requires: ['Ext.Component', 'Ext.ComponentManager', 'Deft.event.LiveEventListener'],
+  requires: ['Ext.Component', 'Ext.ComponentManager', 'Deft.core.Component', 'Deft.event.LiveEventListener'],
   singleton: true,
   constructor: function() {
-    this.listeners = [];
+    this.listeners = {};
   },
   destroy: function() {
-    var listener, _i, _len, _ref;
+    var listener, listeners, selector, _i, _len, _ref;
     _ref = this.listeners;
-    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-      listener = _ref[_i];
-      listener.destroy();
+    for (selector in _ref) {
+      listeners = _ref[selector];
+      for (_i = 0, _len = listeners.length; _i < _len; _i++) {
+        listener = listeners[_i];
+        listener.destroy();
+      }
     }
     this.listeners = null;
   },
   addListener: function(container, selector, eventName, fn, scope, options) {
     var listener;
     listener = Ext.create('Deft.event.LiveEventListener', {
-      container: container,
       selector: selector,
+      container: container,
       eventName: eventName,
       fn: fn,
       scope: scope,
       options: options
     });
-    this.listeners.push(listener);
+    this.listeners[selector] = this.listeners[selector] || [];
+    this.listeners[selector].push(listener);
   },
   removeListener: function(container, selector, eventName, fn, scope) {
     var listener;
     listener = this.findListener(container, selector, eventName, fn, scope);
     if (listener != null) {
-      Ext.Array.remove(this.listeners, listener);
+      Ext.Array.remove(this.listeners[selector], listener);
       listener.destroy();
     }
   },
@@ -53,70 +57,72 @@ Ext.define('Deft.event.LiveEventBus', {
   },
   findListener: function(container, selector, eventName, fn, scope) {
     var listener, _i, _len, _ref;
-    _ref = this.listeners;
+    if (this.listeners[selector] === void 0) {
+      return null;
+    }
+    _ref = this.listeners[selector];
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
       listener = _ref[_i];
-      if (listener.container === container && listener.selector === selector && listener.eventName === eventName && listener.fn === fn && listener.scope === scope) {
+      if (listener.container === container && listener.eventName === eventName && listener.fn === fn && listener.scope === scope) {
         return listener;
       }
     }
     return null;
   },
-  register: function(component) {
+  register: function(component, selector) {
+    var listener, _i, _len, _ref;
+    if (selector == null) {
+      selector = null;
+    }
     component.on('added', this.onComponentAdded, this);
     component.on('removed', this.onComponentRemoved, this);
+    if (this.listeners[selector]) {
+      _ref = this.listeners[selector];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        listener = _ref[_i];
+        listener.register.apply(listener, arguments);
+      }
+    }
   },
   unregister: function(component) {
+    var listener, _i, _len, _ref;
     component.un('added', this.onComponentAdded, this);
     component.un('removed', this.onComponentRemoved, this);
+    if (this.listeners[null]) {
+      _ref = this.listeners[null];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        listener = _ref[_i];
+        listener.unregister(component);
+      }
+    }
   },
-  onComponentAdded: function(component, container, eOpts) {
-    var listener, _i, _len, _ref;
+  onComponentAdded: function(component, container, pos, eOpts) {
+    var listener, listeners, selector, _i, _len, _ref;
     _ref = this.listeners;
-    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-      listener = _ref[_i];
-      listener.register(component);
+    for (selector in _ref) {
+      listeners = _ref[selector];
+      if (selector !== null && component.is(selector)) {
+        for (_i = 0, _len = listeners.length; _i < _len; _i++) {
+          listener = listeners[_i];
+          listener.register(component);
+        }
+      }
     }
   },
   onComponentRemoved: function(component, container, eOpts) {
-    var listener, _i, _len, _ref;
+    var listener, listeners, selector, _i, _len, _ref;
     _ref = this.listeners;
-    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-      listener = _ref[_i];
-      listener.unregister(component);
+    for (selector in _ref) {
+      listeners = _ref[selector];
+      if (selector !== null && component.is(selector)) {
+        for (_i = 0, _len = listeners.length; _i < _len; _i++) {
+          listener = listeners[_i];
+          listener.unregister(component);
+        }
+      }
     }
   }
 }, function() {
-  if (Ext.getVersion('touch') != null) {
-    Ext.define('Deft.Component', {
-      override: 'Ext.Component',
-      setParent: function(newParent) {
-        var oldParent, result;
-        oldParent = this.getParent();
-        result = this.callParent(arguments);
-        if (oldParent === null && newParent !== null) {
-          this.fireEvent('added', this, newParent);
-        } else if (oldParent !== null && newParent !== null) {
-          this.fireEvent('removed', this, oldParent);
-          this.fireEvent('added', this, newParent);
-        } else if (oldParent !== null && newParent === null) {
-          this.fireEvent('removed', this, oldParent);
-        }
-        return result;
-      },
-      isDescendantOf: function(container) {
-        var ancestor;
-        ancestor = this.getParent();
-        while (ancestor != null) {
-          if (ancestor === container) {
-            return true;
-          }
-          ancestor = ancestor.getParent();
-        }
-        return false;
-      }
-    });
-  }
   Ext.Function.interceptAfter(Ext.ComponentManager, 'register', function(component) {
     Deft.event.LiveEventBus.register(component);
   });
