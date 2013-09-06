@@ -41,9 +41,9 @@ Ext.define( 'Deft.mixin.Controllable',
 						
 						@$controlled = true
 						
-						@callOverridden( arguments )
-						
 						controller.controlView( @ )
+						
+						@callOverridden( arguments )
 						
 						return @
 					
@@ -66,9 +66,9 @@ Ext.define( 'Deft.mixin.Controllable',
 					
 						@$controlled = true
 					
-						@callParent( arguments )
-					
 						controller.controlView( @ )
+					
+						@callParent( arguments )
 					
 						return @
 				

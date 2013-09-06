@@ -135,11 +135,17 @@ Ext.define( 'Deft.mvc.ViewController',
 	* Observers automatically created and removed by this ViewController.
 	###
 	observe: {}
+
+	###*
+	* Controls automatically created and removed by this ViewController.
+	###
+	control: {}
 	
 	constructor: ( config = {} ) ->
+		@initConfig( config ) # Ensure any config values are set before creating observers.
+		@registeredObservers = {}
 		if config.view
 			@controlView( config.view )
-		@initConfig( config ) # Ensure any config values are set before creating observers.
 		if Ext.Object.getSize( @observe ) > 0 then @createObservers()
 		return @
 	
@@ -151,19 +157,11 @@ Ext.define( 'Deft.mvc.ViewController',
 			@setView( view )
 			@registeredComponentReferences = {}
 			@registeredComponentSelectors = {}
+			@initComponentSelectors = {}
+			@observeComponentSelectors = {}
 			
-			if Ext.getVersion( 'extjs' )?
-				# Ext JS
-				if @getView().rendered
-					@onViewInitialize()
-				else
-					@getView().on( 'afterrender', @onViewInitialize, @, single: true )
-			else
-				# Sencha Touch
-				if @getView().initialized
-					@onViewInitialize()
-				else
-					@getView().on( 'initialize', @onViewInitialize, @, single: true )
+			# Initialize view is called as soon as a view is controlled, not waiting for the afterRender event
+			@initializeView()
 		else
 			Ext.Error.raise( msg: 'Error constructing ViewController: the configured \'view\' is not an Ext.Component.' )
 		return
@@ -178,29 +176,139 @@ Ext.define( 'Deft.mvc.ViewController',
 	* Destroy the ViewController
 	###
 	destroy: ->
+		@cleanupDefaultViewListeners()
+		
+		for selector, listener of @observeComponentSelectors
+			listener.destroy()
+			delete @observeComponentSelectors[ selector ]
+			
 		for id of @registeredComponentReferences
 			@removeComponentReference( id )
+			
 		for selector of @registeredComponentSelectors
 			@removeComponentSelector( selector )
 		@removeObservers()
 		return true
 	
+
+	###*
+	* @private
+	###
+	$control: do() ->
+		if Ext.getVersion( 'extjs' )
+			config =
+				view :
+					beforedestroy :
+						fn: "onViewBeforeDestroy"
+					afterrender:
+						single: true
+						fn: "onViewInitialize"
+		else
+			config =
+				view:
+					initialize:
+						single: true,
+						fn: "onViewInitialize"
+	
+	
+	###*
+	* Sets up the default listeners for the controlled view.
+	* For ExtJS the listeners are for the beforedestroy and afterrender events
+	* For Sencha Touch initialize
+	* See $control above
+	* @private
+	###
+	setupDefaultViewListeners : ->
+		componentSelector = Ext.create( 'Deft.mvc.ComponentSelector',
+			view: @getView()
+			selector: null
+			listeners: @$control.view
+			scope: @
+			live: true
+		)
+		@initComponentSelectors[ null ] = componentSelector
+		
+		if not @control.view
+			@control.view = {}
+		return
+					
+	###*
+	* @private
+	###
+	cleanupDefaultViewListeners: ->
+		@initComponentSelectors[ null ].destroy()
+		delete @initComponentSelectors[ null ]
+		return
+	
 	###*
 	* @private
 	###
 	onViewInitialize: ->
-		if Ext.getVersion( 'extjs' )?
-			# Ext JS
-			@getView().on( 'beforedestroy', @onViewBeforeDestroy, @ )
-		else
-			# Sencha Touch
-			self = this
-			originalViewDestroyFunction = @getView().destroy
-			@getView().destroy = ->
-				if self.destroy()
-					originalViewDestroyFunction.call( @ )
-				return
+		@init()
+		return
+	
+	###*
+	* @private
+	###
+	createViewObservers: ( view, eOpts ) ->
+		view.$observers = {}
 		
+		# eOpts.observe contains the observers passed by addComponentObserver
+		@createObservers( eOpts.observe, view.$observers, view )
+			
+	###*
+	* @private
+	###
+	removeViewObservers: ( view ) ->
+		@removeObservers( view.$observers )
+
+	###*
+	* @private
+	###
+	addComponentObserver : ( selector, observe ) ->
+		# Creates a component selector that listens to the afterrender and removed events for a component.
+		# When afterrender / initialize is fired, the observers specified in the observe param are binded
+		
+		if Ext.getVersion( 'extjs' )
+			componentSelector = Ext.create( 'Deft.mvc.ComponentSelector',
+				view: @getView()
+				selector: selector
+				listeners:
+					afterrender:
+						fn: 'createViewObservers'
+						observe : observe
+					removed : 
+						fn: 'removeViewObservers'
+				scope: @
+				live: true
+			)
+		else
+			componentSelector = Ext.create( 'Deft.mvc.ComponentSelector',
+				view: @getView()
+				selector: selector
+				listeners:
+					initialize:
+						fn: 'createViewObservers'
+						observe : observe
+					removed : 
+						fn: 'removeViewObservers'
+				scope: @
+				live: true
+			)
+			
+		@observeComponentSelectors[ selector ] = componentSelector
+
+	###*
+	* @private
+	###
+	initializeView: ->
+		rendered = @getView().rendered or @getView().initialized
+		
+		# Setup listeners for the beforedestroy / afterrender or initialize events for the controlled view
+		@setupDefaultViewListeners()
+		
+		# Almost the same loop as main branch
+		# Loops into the control param creating component references, selectors and component observers
 		for id, config of @control
 			selector = null
 			if id isnt 'view'
@@ -214,29 +322,60 @@ Ext.define( 'Deft.mvc.ViewController',
 			if Ext.isObject( config.listeners )
 				listeners = config.listeners
 			else
-				listeners = config unless config.selector? or config.live?
-			live = config.live? and config.live
-			@addComponentReference( id, selector, live )
-			@addComponentSelector( selector, listeners, live )
+			#TODO: config.live remains for backward compatibility
+				listeners = config unless config.selector? or config.live? or config.observe?
+				
+			@addComponentReference( id, selector )
+			@addComponentSelector( selector, listeners )
+			
+			# Here component observers are registered. Options are specified by the observe param
+			if Ext.isObject( config.observe )
+				@addComponentObserver( selector, config.observe )
+			
+			# If the view has been already rendered get every child referenced by this selector and register the live event listener
+			if rendered is true
+				getterName = 'get' + Ext.String.capitalize( id )
+				
+				# Executes the getter
+				elements = @[ getterName ]()
+				if ! Ext.isArray( elements )
+					elements = [ elements ]
+
+				for element in elements
+					if element isnt null
+						Deft.LiveEventBus.register( element, selector )
 		
-		@init()
+		# Does the same in the main branch
+		if Ext.getVersion( 'extjs' )?
+			# Ext JS
+			if @getView().rendered
+				@onViewInitialize()
+		else
+			# Sencha Touch
+			self = this
+			originalViewDestroyFunction = @getView().destroy
+			@getView().destroy = ->
+				if self.destroy() isnt false
+					return originalViewDestroyFunction.call( @ )
+				return false
+				
+			if @getView().initialized
+				@onViewInitialize()
+		
 		return
 	
 	###*
 	* @private
 	###
 	onViewBeforeDestroy: ->
-		if @destroy()
-			@getView().un( 'beforedestroy', @onViewBeforeDestroy, @ )
-			return true
-		return false
+		# unnecessary to remove the beforedestroy event handler, it's automatic with live event handlers  
+		return @destroy()
 	
 	###*
 	* Add a component accessor method the ViewController for the specified view-relative selector.
 	###
-	addComponentReference: ( id, selector, live = false ) ->
-		Deft.Logger.log( "Adding '#{ id }' component reference for selector: '#{ selector }'." )
-		
+	addComponentReference: ( id, selector ) ->
+		# All component references are treated as live component references, without checking the live parameter
 		if @registeredComponentReferences[ id ]?
 			Ext.Error.raise( msg: "Error adding component reference: an existing component reference was already registered as '#{ id }'." )
 		
@@ -244,16 +383,11 @@ Ext.define( 'Deft.mvc.ViewController',
 		if id isnt 'view'
 			getterName = 'get' + Ext.String.capitalize( id )
 			unless @[ getterName ]?
-				if live
-					@[ getterName ] = Ext.Function.pass( @getViewComponent, [ selector ], @ )
-				else
-					matches = @getViewComponent( selector )
-					unless matches?
-						Ext.Error.raise( msg: "Error locating component: no component(s) found matching '#{ selector }'." )
-					@[ getterName ] = -> matches
+				Deft.Logger.log( "Adding '#{ id }' component reference for selector: '#{ selector }'." )
+				@[ getterName ] = Ext.Function.pass( @getViewComponent, [ selector ], @ )
 				@[ getterName ].generated = true
-		
-		@registeredComponentReferences[ id ] = true
+				@registeredComponentReferences[ id ] = true
+
 		return
 	
 	###*
@@ -293,8 +427,9 @@ Ext.define( 'Deft.mvc.ViewController',
 	###*
 	* Add a component selector with the specified listeners for the specified view-relative selector.
 	###
-	addComponentSelector: ( selector, listeners, live = false ) ->
-		Deft.Logger.log( "Adding component selector for: '#{ selector }'." )
+	addComponentSelector: ( selector, listeners ) ->
+		# Live is true by default 
+		Deft.Logger.log( "Adding component selector for: '#{ selector or 'view' }'." )
 		
 		existingComponentSelector = @getComponentSelector( selector )
 		if existingComponentSelector?
@@ -305,7 +440,7 @@ Ext.define( 'Deft.mvc.ViewController',
 			selector: selector
 			listeners: listeners
 			scope: @
-			live: live
+			live: true
 		)
 		@registeredComponentSelectors[ selector ] = componentSelector
 		
@@ -327,7 +462,7 @@ Ext.define( 'Deft.mvc.ViewController',
 		return
 	
 	###*
-	* Get the component selectorcorresponding to the specified view-relative selector.
+	* Get the component selector corresponding to the specified view-relative selector.
 	###
 	getComponentSelector: ( selector ) ->
 		return @registeredComponentSelectors[ selector ]
@@ -335,29 +470,30 @@ Ext.define( 'Deft.mvc.ViewController',
 	###*
 	* @protected
 	###
-	createObservers: ->
-		@registeredObservers = {}
-		for target, events of @observe
-			@addObserver( target, events )
-		
+	createObservers: ( observe = @observe, observerContainer = @registeredObservers, host = @ )->
+		# Added the ability to specify the container and the host
+		for target, events of observe
+			@addObserver( target, events, observerContainer, host )
 		return
-	
-	addObserver: ( target, events ) ->
+
+	addObserver: ( target, events, observerContainer = @registeredObservers, host = @ ) ->
+		# Added the ability to specify the container and the host
 		observer = Ext.create( 'Deft.mvc.Observer',
-			host: @
+			host: host
 			target: target
 			events: events
+			scope: @
 		)
-		@registeredObservers[ target ] = observer
+		observerContainer[ target ] = observer
 	
 	###*
 	* @protected
 	###
-	removeObservers: ->
-		for target, observer of @registeredObservers
+	removeObservers: ( observerContainer = @registeredObservers )->
+		for target, observer of observerContainer
 			observer.destroy()
-			delete @registeredObservers[ target ]
-		
+			delete observerContainer[ target ]
+			
 		return
 , ->
 	###*
