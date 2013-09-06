@@ -93,10 +93,11 @@ Ext.define( 'Deft.mvc.Observer',
 	###
 	constructor: ( config ) ->
 		@listeners = []
-
+		
 		host = config?.host
 		target = config?.target
 		events = config?.events
+		@scope = config?.scope
 
 		if host and target and ( @isPropertyChain( target ) or @isTargetObservable( host, target ) )
 
@@ -139,11 +140,14 @@ Ext.define( 'Deft.mvc.Observer',
 	isTargetObservable: ( host, target ) ->
 		hostTarget = @locateTarget( host, target )
 		return false if not hostTarget?
-
+		
+		hostTargetClass = Ext.ClassManager.getClass( hostTarget )
+		if Deft.Class.extendsClass('Ext.dom.Element', hostTargetClass)
+			return true
+		
 		if hostTarget.isObservable? or hostTarget.mixins?.observable?
 			return true
 		else
-			hostTargetClass = Ext.ClassManager.getClass( hostTarget )
 			return ( Deft.Class.extendsClass( hostTargetClass, 'Ext.util.Observable' ) or Deft.Class.extendsClass( hostTargetClass, 'Ext.mixin.Observable' ) )
 
 	###*
@@ -171,7 +175,7 @@ Ext.define( 'Deft.mvc.Observer',
 	* If necessary, recurse down a property chain to locate the final target object for the event listener.
 	###
 	locateReferences: ( host, target, handler ) ->
-		handlerHost = host
+		handlerHost = @scope || host
 
 		if @isPropertyChain( target )
 			propertyChain = @parsePropertyChain( host, target )
