@@ -108,7 +108,7 @@ Ext.define( 'Deft.mvc.Observer',
 				for handler in handlerArray
 
 					# Default scope is the object hosting the Observer.
-					scope = host
+					scope = @scope || host
 
 					# Default options is null
 					options = null

@@ -41,8 +41,8 @@ Ext.define('Deft.mixin.Controllable', {
             };
           }
           this.$controlled = true;
-          this.callOverridden(arguments);
           controller.controlView(this);
+          this.callOverridden(arguments);
           return this;
         }
         return this.callOverridden(arguments);
@@ -69,8 +69,8 @@ Ext.define('Deft.mixin.Controllable', {
             };
           }
           this.$controlled = true;
-          this.callParent(arguments);
           controller.controlView(this);
+          this.callParent(arguments);
           return this;
         }
         return this.callParent(arguments);
