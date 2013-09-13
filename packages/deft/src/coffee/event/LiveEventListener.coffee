@@ -38,22 +38,40 @@ Ext.define( 'Deft.event.LiveEventListener',
 
 		component.liveHandlers = {}
 		
-		#TODO: define this in Deft.Component, EventBus overrides this method and doesn't call the parent method...
-		# Keeps track of the original fireEvent method
-		oldFireEvent = component.fireEvent
-		component.fireEvent = ( event ) ->
-			# Return in case the event has returned false (as in ExtJS specs)
-			if(oldFireEvent.apply( @, arguments ) is false)
-				return false
-
-			if @liveHandlers[ event ] is undefined
-				return
-
-			for handler in @liveHandlers[ event ]
-				# Fires the event only if the LiveEventListener is meant for this component (see matches method)
-				# Breaks the loop and returns false if an event is returning false  
-				if handler.observable.matches( @ ) and handler.fireEvent.apply( handler, arguments) is false
+		if component.fireEventArgs
+			oldFireEvent = component.fireEventArgs
+			component.fireEventArgs = ( event, params ) ->
+				# Return in case the event has returned false (as in ExtJS specs)
+				if(oldFireEvent.apply( @, arguments ) is false)
 					return false
+	
+				if @liveHandlers[ event ] is undefined
+					return
+	
+				args = [ event ].concat( Array.prototype.slice.call(params || [], 0) )
+				
+				for handler in @liveHandlers[ event ]
+					# Fires the event only if the LiveEventListener is meant for this component (see matches method)
+					# Breaks the loop and returns false if an event is returning false  
+					if handler.observable.matches( @ ) and handler.fireEvent.apply( handler, args ) is false
+						return false
+		else 
+			#TODO: define this in Deft.Component, EventBus overrides this method and doesn't call the parent method...
+			# Keeps track of the original fireEvent method
+			oldFireEvent = component.fireEvent
+			component.fireEvent = ( event ) ->
+				# Return in case the event has returned false (as in ExtJS specs)
+				if(oldFireEvent.apply( @, arguments ) is false)
+					return false
+	
+				if @liveHandlers[ event ] is undefined
+					return
+	
+				for handler in @liveHandlers[ event ]
+					# Fires the event only if the LiveEventListener is meant for this component (see matches method)
+					# Breaks the loop and returns false if an event is returning false  
+					if handler.observable.matches( @ ) and handler.fireEvent.apply( handler, arguments) is false
+						return false
 		
 		if ! component.fireAction
 			return
@@ -64,9 +82,9 @@ Ext.define( 'Deft.event.LiveEventListener',
 			if @liveHandlers[ event ] is undefined
 				return oldFireAction.apply( @, arguments )
 
+			args = [ event ].concat( Array.prototype.slice.call(params || [], 0) )
+			
 			for handler in @liveHandlers[ event ]
-				args = [ event ].concat( params || [] )
-				  
 				# Fires the event only if the LiveEventListener is meant for this component (see matches method)
 				# Breaks the loop and returns false if an event is returning false
 				if handler.observable.matches( @ ) and handler.fireEvent.apply( handler, args ) is false

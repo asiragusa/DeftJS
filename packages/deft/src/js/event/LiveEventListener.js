@@ -38,23 +38,44 @@ Ext.define('Deft.event.LiveEventListener', {
       return;
     }
     component.liveHandlers = {};
-    oldFireEvent = component.fireEvent;
-    component.fireEvent = function(event) {
-      var handler, _i, _len, _ref;
-      if (oldFireEvent.apply(this, arguments) === false) {
-        return false;
-      }
-      if (this.liveHandlers[event] === void 0) {
-        return;
-      }
-      _ref = this.liveHandlers[event];
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        handler = _ref[_i];
-        if (handler.observable.matches(this) && handler.fireEvent.apply(handler, arguments) === false) {
+    if (component.fireEventArgs) {
+      oldFireEvent = component.fireEventArgs;
+      component.fireEventArgs = function(event, params) {
+        var args, handler, _i, _len, _ref;
+        if (oldFireEvent.apply(this, arguments) === false) {
           return false;
         }
-      }
-    };
+        if (this.liveHandlers[event] === void 0) {
+          return;
+        }
+        args = [event].concat(Array.prototype.slice.call(params || [], 0));
+        _ref = this.liveHandlers[event];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          handler = _ref[_i];
+          if (handler.observable.matches(this) && handler.fireEvent.apply(handler, args) === false) {
+            return false;
+          }
+        }
+      };
+    } else {
+      oldFireEvent = component.fireEvent;
+      component.fireEvent = function(event) {
+        var handler, _i, _len, _ref;
+        if (oldFireEvent.apply(this, arguments) === false) {
+          return false;
+        }
+        if (this.liveHandlers[event] === void 0) {
+          return;
+        }
+        _ref = this.liveHandlers[event];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          handler = _ref[_i];
+          if (handler.observable.matches(this) && handler.fireEvent.apply(handler, arguments) === false) {
+            return false;
+          }
+        }
+      };
+    }
     if (!component.fireAction) {
       return;
     }
@@ -64,10 +85,10 @@ Ext.define('Deft.event.LiveEventListener', {
       if (this.liveHandlers[event] === void 0) {
         return oldFireAction.apply(this, arguments);
       }
+      args = [event].concat(Array.prototype.slice.call(params || [], 0));
       _ref = this.liveHandlers[event];
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         handler = _ref[_i];
-        args = [event].concat(params || []);
         if (handler.observable.matches(this) && handler.fireEvent.apply(handler, args) === false) {
           return false;
         }
