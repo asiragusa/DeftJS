@@ -19,76 +19,68 @@ Ext.define('Deft.mixin.Controllable', {
     Deft.Logger.deprecate('Deft.mixin.Controllable has been deprecated and can now be omitted - simply use the \'controller\' class annotation on its own.');
   }
 }, function() {
-  var createControllerInterceptor;
+  var callParentMethod, createControllerInterceptor;
   if (Ext.getVersion('extjs') && Ext.getVersion('core').isLessThan('4.1.0')) {
-    createControllerInterceptor = function() {
-      return function(config) {
-        var controller, error;
-        if (config == null) {
-          config = {};
-        }
-        if (this instanceof Ext.ClassManager.get('Ext.Component') && !this.$controlled) {
-          try {
-            controller = Ext.create(this.controller, config.controllerConfig || this.controllerConfig || {});
-          } catch (_error) {
-            error = _error;
-            Deft.Logger.warn("Error initializing view controller: an error occurred while creating an instance of the specified controller: '" + this.controller + "'.");
-            throw error;
-          }
-          if (this.getController === void 0) {
-            this.getController = function() {
-              return controller;
-            };
-          }
-          this.$controlled = true;
-          controller.controlView(this);
-          this.callOverridden(arguments);
-          return this;
-        }
-        return this.callOverridden(arguments);
-      };
-    };
+    callParentMethod = "callOverridden";
   } else {
-    createControllerInterceptor = function() {
-      return function(config) {
-        var controller, error;
-        if (config == null) {
-          config = {};
-        }
-        if (this instanceof Ext.ClassManager.get('Ext.Component') && !this.$controlled) {
-          try {
-            controller = Ext.create(this.controller, config.controllerConfig || this.controllerConfig || {});
-          } catch (_error) {
-            error = _error;
-            Deft.Logger.warn("Error initializing view controller: an error occurred while creating an instance of the specified controller: '" + this.controller + "'.");
-            throw error;
-          }
-          if (this.getController === void 0) {
-            this.getController = function() {
-              return controller;
-            };
-          }
-          this.$controlled = true;
-          controller.controlView(this);
-          this.callParent(arguments);
-          return this;
-        }
-        return this.callParent(arguments);
-      };
-    };
+    callParentMethod = "callParent";
   }
+  createControllerInterceptor = function(config) {
+    var className, controller, controllers, defaultController, error, _i, _len, _ref;
+    if (config == null) {
+      config = {};
+    }
+    if (!(this instanceof Ext.ClassManager.get('Ext.Component') || this.$controlled)) {
+      return this[callParentMethod](arguments);
+    }
+    controllers = {};
+    _ref = this.$controllers;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      className = _ref[_i];
+      try {
+        controller = Ext.create(className, config.controllerConfig || this.$controllerConfig[className]);
+        controllers[className] = controller;
+        controller.controlView(this);
+      } catch (_error) {
+        error = _error;
+        Deft.Logger.warn("Error initializing view controller: an error occurred while creating an instance of the specified controller: '" + this.controller + "'.");
+        throw error;
+      }
+    }
+    defaultController = this.$controllers[0];
+    if (this.getController === void 0) {
+      this.getController = function(className) {
+        if (className == null) {
+          className = defaultController;
+        }
+        return controllers[className];
+      };
+    }
+    this.$controlled = true;
+    return this[callParentMethod](arguments);
+  };
   Deft.Class.registerPreprocessor('controller', function(Class, data, hooks, callback) {
     var self;
+    data.$controllers = [data.controller];
+    data.$controllerConfig = {};
+    data.$controllerConfig[data.controller] = data.controllerConfig || {};
     Deft.Class.hookOnClassCreated(hooks, function(Class) {
       Class.override({
-        constructor: createControllerInterceptor()
+        constructor: createControllerInterceptor
       });
     });
     Deft.Class.hookOnClassExtended(data, function(Class, data, hooks) {
       Deft.Class.hookOnClassCreated(hooks, function(Class) {
+        var controller, _i, _len, _ref;
         Class.override({
-          constructor: createControllerInterceptor()
+          constructor: createControllerInterceptor
         });
+        _ref = Class.superclass.$controllers || [];
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          controller = _ref[_i];
+          data.$controllers.push(controller);
+        }
+        Ext.applyIf(data.$controllerConfig, Class.superclass.$controllerConfig);
       });
     });
     self = this;

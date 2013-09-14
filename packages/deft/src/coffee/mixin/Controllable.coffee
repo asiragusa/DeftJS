@@ -24,64 +24,50 @@ Ext.define( 'Deft.mixin.Controllable',
 ,
 	->
 		if Ext.getVersion( 'extjs' ) and Ext.getVersion( 'core' ).isLessThan( '4.1.0' )
-			# Ext JS 4.0
-			createControllerInterceptor = ->
-				return ( config = {} ) ->
-					if @ instanceof Ext.ClassManager.get( 'Ext.Component' ) and not @$controlled
-						try
-							controller = Ext.create( @controller, config.controllerConfig || @controllerConfig || {} )
-						catch error
-							# NOTE: Ext.Logger.error() will throw an error, masking the error we intend to rethrow, so warn instead.
-							Deft.Logger.warn( "Error initializing view controller: an error occurred while creating an instance of the specified controller: '#{ @controller }'." )
-							throw error
-						
-						if @getController is undefined
-							@getController = ->
-								return controller
-						
-						@$controlled = true
-						
-						controller.controlView( @ )
-						
-						@callOverridden( arguments )
-						
-						return @
-					
-					return @callOverridden( arguments )
+			callParentMethod = "callOverridden"
 		else
 			# Sencha Touch 2.0+, Ext JS 4.1+
-			createControllerInterceptor = ->
-				return ( config = {} ) ->
-					if @ instanceof Ext.ClassManager.get( 'Ext.Component' ) and not @$controlled
-						try
-							controller = Ext.create( @controller, config.controllerConfig || @controllerConfig || {} )
-						catch error
-							# NOTE: Ext.Logger.error() will throw an error, masking the error we intend to rethrow, so warn instead.
-							Deft.Logger.warn( "Error initializing view controller: an error occurred while creating an instance of the specified controller: '#{ @controller }'." )
-							throw error
-					
-						if @getController is undefined
-							@getController = ->
-								return controller
-					
-						@$controlled = true
-					
-						controller.controlView( @ )
-					
-						@callParent( arguments )
-					
-						return @
-				
-					return @callParent( arguments )
+			callParentMethod = "callParent"
+		
+		createControllerInterceptor = ( config = {} ) ->
+			if not ( @ instanceof Ext.ClassManager.get( 'Ext.Component' ) or @$controlled )
+				return @[ callParentMethod ]( arguments )
+			
+			controllers = {}
+			
+			for className in @$controllers
+				try
+					controller = Ext.create( className, config.controllerConfig || @$controllerConfig[ className ] )
+					controllers[ className ] = controller
+					controller.controlView( @ )
+				catch error
+					# NOTE: Ext.Logger.error() will throw an error, masking the error we intend to rethrow, so warn instead.
+					Deft.Logger.warn( "Error initializing view controller: an error occurred while creating an instance of the specified controller: '#{ @controller }'." )
+					throw error
+		
+			defaultController = @$controllers[ 0 ]
+			
+			if @getController is undefined
+				@getController = ( className = defaultController ) ->
+					return controllers[ className ]
+		
+			@$controlled = true
+			
+			return @[ callParentMethod ]( arguments )
 			
 		
 		Deft.Class.registerPreprocessor( 
 			'controller'
 			( Class, data, hooks, callback ) ->
+				data.$controllers = [ data.controller ]
+				
+				data.$controllerConfig = {}
+				data.$controllerConfig[ data.controller ] = data.controllerConfig || {}
+
 				# Override the constructor for this class with a controller interceptor.
 				Deft.Class.hookOnClassCreated( hooks, ( Class ) ->
 					Class.override(
-						constructor: createControllerInterceptor()
+						constructor: createControllerInterceptor
 					)
 					return
 				)
@@ -91,8 +77,14 @@ Ext.define( 'Deft.mixin.Controllable',
 					# Override the constructor for this class with a controller interceptor.
 					Deft.Class.hookOnClassCreated( hooks, ( Class ) ->
 						Class.override(
-							constructor: createControllerInterceptor()
+							constructor: createControllerInterceptor
 						)
+						
+						for controller in Class.superclass.$controllers || []
+							data.$controllers.push(controller)
+						
+						Ext.applyIf( data.$controllerConfig, Class.superclass.$controllerConfig )
+						
 						return
 					)
 					return
