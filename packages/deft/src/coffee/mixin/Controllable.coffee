@@ -80,6 +80,9 @@ Ext.define( 'Deft.mixin.Controllable',
 							constructor: createControllerInterceptor
 						)
 						
+						data.$controllers ?= []
+						data.$controllerConfig ?= {}
+						
 						for controller in Class.superclass.$controllers || []
 							data.$controllers.push(controller)
 						

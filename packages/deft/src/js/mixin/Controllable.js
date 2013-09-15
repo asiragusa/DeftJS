@@ -75,6 +75,12 @@ Ext.define('Deft.mixin.Controllable', {
         Class.override({
           constructor: createControllerInterceptor
         });
+        if (data.$controllers == null) {
+          data.$controllers = [];
+        }
+        if (data.$controllerConfig == null) {
+          data.$controllerConfig = {};
+        }
         _ref = Class.superclass.$controllers || [];
         for (_i = 0, _len = _ref.length; _i < _len; _i++) {
           controller = _ref[_i];
