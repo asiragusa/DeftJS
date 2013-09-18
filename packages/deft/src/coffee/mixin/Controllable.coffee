@@ -29,31 +29,32 @@ Ext.define( 'Deft.mixin.Controllable',
 			# Sencha Touch 2.0+, Ext JS 4.1+
 			callParentMethod = "callParent"
 		
-		createControllerInterceptor = ( config = {} ) ->
-			if not ( @ instanceof Ext.ClassManager.get( 'Ext.Component' ) or @$controlled )
+		createControllerInterceptor = () ->
+			return ( config = {} ) ->
+				if not @ instanceof Ext.ClassManager.get( 'Ext.Component' ) or @$controlled
+					return @[ callParentMethod ]( arguments )
+				
+				controllers = {}
+				
+				for className in @$controllers
+					try
+						controller = Ext.create( className, config.controllerConfig || @$controllerConfig[ className ] )
+						controllers[ className ] = controller
+						controller.controlView( @ )
+					catch error
+						# NOTE: Ext.Logger.error() will throw an error, masking the error we intend to rethrow, so warn instead.
+						Deft.Logger.warn( "Error initializing view controller: an error occurred while creating an instance of the specified controller: '#{ @controller }'." )
+						throw error
+			
+				defaultController = @$controllers[ 0 ]
+				
+				if @getController is undefined
+					@getController = ( className = defaultController ) ->
+						return controllers[ className ]
+			
+				@$controlled = true
+				
 				return @[ callParentMethod ]( arguments )
-			
-			controllers = {}
-			
-			for className in @$controllers
-				try
-					controller = Ext.create( className, config.controllerConfig || @$controllerConfig[ className ] )
-					controllers[ className ] = controller
-					controller.controlView( @ )
-				catch error
-					# NOTE: Ext.Logger.error() will throw an error, masking the error we intend to rethrow, so warn instead.
-					Deft.Logger.warn( "Error initializing view controller: an error occurred while creating an instance of the specified controller: '#{ @controller }'." )
-					throw error
-		
-			defaultController = @$controllers[ 0 ]
-			
-			if @getController is undefined
-				@getController = ( className = defaultController ) ->
-					return controllers[ className ]
-		
-			@$controlled = true
-			
-			return @[ callParentMethod ]( arguments )
 			
 		
 		Deft.Class.registerPreprocessor( 
@@ -67,7 +68,7 @@ Ext.define( 'Deft.mixin.Controllable',
 				# Override the constructor for this class with a controller interceptor.
 				Deft.Class.hookOnClassCreated( hooks, ( Class ) ->
 					Class.override(
-						constructor: createControllerInterceptor
+						constructor: createControllerInterceptor()
 					)
 					return
 				)
@@ -77,7 +78,7 @@ Ext.define( 'Deft.mixin.Controllable',
 					# Override the constructor for this class with a controller interceptor.
 					Deft.Class.hookOnClassCreated( hooks, ( Class ) ->
 						Class.override(
-							constructor: createControllerInterceptor
+							constructor: createControllerInterceptor()
 						)
 						
 						data.$controllers ?= []
