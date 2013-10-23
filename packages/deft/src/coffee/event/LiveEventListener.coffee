@@ -96,6 +96,8 @@ Ext.define( 'Deft.event.LiveEventListener',
 	handle: ->
 		return @fn.apply(@scope, arguments)
 		
+	emptyFn: ->
+		return
 	
 	# Register a candidate component as a source of 'live' events
 	register: ( component ) ->
@@ -117,7 +119,7 @@ Ext.define( 'Deft.event.LiveEventListener',
 		event.addListener(@eventName, @handle, @, @options)
 		
 		#TODO: Some events don't fire without this, maybe there is a better solution, but test are failing... component.HasListeners.prototype[@eventName] = 1
-		component.on( @eventName, Ext.emptyFn, @, @options )
+		component.on( @eventName, this.emptyFn, @, @options )
 		
 		component.liveHandlers[@eventName].push( event )
 		return

@@ -98,6 +98,7 @@ Ext.define('Deft.event.LiveEventListener', {
   handle: function() {
     return this.fn.apply(this.scope, arguments);
   },
+  emptyFn: function() {},
   register: function(component) {
     var event, index;
     index = Ext.Array.indexOf(this.components, component);
@@ -112,7 +113,7 @@ Ext.define('Deft.event.LiveEventListener', {
     event = Ext.create('Ext.util.Observable');
     event.observable = this;
     event.addListener(this.eventName, this.handle, this, this.options);
-    component.on(this.eventName, Ext.emptyFn, this, this.options);
+    component.on(this.eventName, this.emptyFn, this, this.options);
     component.liveHandlers[this.eventName].push(event);
   },
   unregister: function(component, destroying) {
