@@ -19,7 +19,7 @@ Ext.define('Deft.mixin.Injectable', {
     Deft.Logger.deprecate('Deft.mixin.Injectable has been deprecated and can now be omitted - simply use the \'inject\' class annotation on its own.');
   }
 }, function() {
-  var createInjectionInterceptor;
+  var createInjectionInterceptor, oldDerive;
   if (Ext.getVersion('extjs') && Ext.getVersion('core').isLessThan('4.1.0')) {
     createInjectionInterceptor = function() {
       return function() {
@@ -39,6 +39,53 @@ Ext.define('Deft.mixin.Injectable', {
         }
         return this.callParent(arguments);
       };
+    };
+  }
+  if (Ext.cmd) {
+    oldDerive = Ext.cmd.derive;
+    Ext.cmd.derive = function(className, base, data, enumerableMembers, xtypes, xtypesChain, xtypeMap, aliases, mixins, names, createdFn) {
+      var dataInjectObject, identifier, oldCreated, oldExtended, _i, _len, _ref;
+      if (!data.inject) {
+        oldDerive.apply(this, arguments);
+        return;
+      }
+      if (Ext.isString(data.inject)) {
+        data.inject = [data.inject];
+      }
+      if (Ext.isArray(data.inject)) {
+        dataInjectObject = {};
+        _ref = data.inject;
+        for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+          identifier = _ref[_i];
+          dataInjectObject[identifier] = identifier;
+        }
+        data.inject = dataInjectObject;
+      }
+      oldCreated = createdFn;
+      createdFn = function(Class) {
+        Class.override({
+          constructor: createInjectionInterceptor()
+        });
+        if (oldCreated) {
+          return oldCreated.apply(this, arguments);
+        }
+      };
+      oldExtended = data.onClassExtended;
+      data.onClassExtended = function(Class, data, hooks) {
+        Deft.Class.hookOnClassCreated(hooks, function(Class) {
+          Class.override({
+            constructor: createInjectionInterceptor()
+          });
+        });
+        if (data.inject == null) {
+          data.inject = {};
+        }
+        Ext.applyIf(data.inject, Class.superclass.inject);
+        if (oldExtended) {
+          return oldExtended.apply(this, arguments);
+        }
+      };
+      return oldDerive.apply(this, arguments);
     };
   }
   Deft.Class.registerPreprocessor('inject', function(Class, data, hooks, callback) {

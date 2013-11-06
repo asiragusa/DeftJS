@@ -39,6 +39,54 @@ Ext.define( 'Deft.mixin.Injectable',
 						@$injected = true
 					return @callParent( arguments )
 
+		if Ext.cmd
+			oldDerive = Ext.cmd.derive
+			Ext.cmd.derive = ( className, base, data, enumerableMembers, xtypes, xtypesChain, xtypeMap, aliases, mixins, names, createdFn ) ->
+				if ! data.inject
+					oldDerive.apply( @, arguments )
+					return
+				
+				# Convert a String or Array of Strings specified for data.inject into an Object.
+				data.inject = [ data.inject ] if Ext.isString( data.inject )
+				if Ext.isArray( data.inject )
+					dataInjectObject = {}
+					for identifier in data.inject
+						dataInjectObject[ identifier ] = identifier
+					data.inject = dataInjectObject
+				
+				oldCreated = createdFn
+				createdFn = ( Class ) ->
+					Class.override(
+						constructor: createInjectionInterceptor()
+					)
+					
+					if oldCreated
+						return oldCreated.apply( @, arguments )
+						
+					return
+					
+				oldExtended = data.onClassExtended
+				data.onClassExtended = ( Class, data, hooks ) ->
+					# Override the constructor for this class with an injection interceptor.
+					Deft.Class.hookOnClassCreated( hooks, ( Class ) ->
+						Class.override(
+							constructor: createInjectionInterceptor()
+						)
+						return
+					)
+
+					# Merge identifiers, ensuring that identifiers in data override identifiers in superclass.
+					data.inject ?= {}
+					Ext.applyIf( data.inject, Class.superclass.inject )
+					
+					if oldExtended 
+						return oldExtended.apply( @, arguments )
+					
+					return
+					
+				oldDerive.apply( @, arguments )
+				
+		
 		Deft.Class.registerPreprocessor(
 			'inject'
 			( Class, data, hooks, callback ) ->

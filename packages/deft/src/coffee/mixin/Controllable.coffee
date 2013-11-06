@@ -57,6 +57,55 @@ Ext.define( 'Deft.mixin.Controllable',
 				return @[ callParentMethod ]( arguments )
 			
 		
+		if Ext.cmd
+			oldDerive = Ext.cmd.derive
+			Ext.cmd.derive = ( className, base, data, enumerableMembers, xtypes, xtypesChain, xtypeMap, aliases, mixins, names, createdFn ) ->
+				if ! data.controller
+					oldDerive.apply( @, arguments )
+					return
+				
+				data.$controllers = [ data.controller ]
+				data.$controllerConfig = {}
+				data.$controllerConfig[ data.controller ] = data.controllerConfig || {}
+				
+				oldCreated = createdFn
+				createdFn = ( Class ) ->
+					Class.override(
+						constructor: createControllerInterceptor()
+					)
+					
+					if oldCreated
+						return oldCreated.apply( @, arguments )
+						
+					return
+				
+				oldExtended = data.onClassExtended
+				data.onClassExtended = ( Class, data, hooks ) ->
+					# Override the constructor for this class with a controller interceptor.
+					Deft.Class.hookOnClassCreated( hooks, ( Class ) ->
+						Class.override(
+							constructor: createControllerInterceptor()
+						)
+						
+						data.$controllers ?= []
+						data.$controllerConfig ?= {}
+						
+						for controller in Class.superclass.$controllers || []
+							data.$controllers.push(controller)
+						
+						Ext.applyIf( data.$controllerConfig, Class.superclass.$controllerConfig )
+						
+						return
+					)
+					
+					if oldExtended 
+						return oldExtended.apply( @, arguments )
+					
+					return
+					
+				oldDerive.apply( @, arguments )
+					
+		
 		Deft.Class.registerPreprocessor( 
 			'controller'
 			( Class, data, hooks, callback ) ->

@@ -19,7 +19,7 @@ Ext.define('Deft.mixin.Controllable', {
     Deft.Logger.deprecate('Deft.mixin.Controllable has been deprecated and can now be omitted - simply use the \'controller\' class annotation on its own.');
   }
 }, function() {
-  var callParentMethod, createControllerInterceptor;
+  var callParentMethod, createControllerInterceptor, oldDerive;
   if (Ext.getVersion('extjs') && Ext.getVersion('core').isLessThan('4.1.0')) {
     callParentMethod = "callOverridden";
   } else {
@@ -61,6 +61,53 @@ Ext.define('Deft.mixin.Controllable', {
       return this[callParentMethod](arguments);
     };
   };
+  if (Ext.cmd) {
+    oldDerive = Ext.cmd.derive;
+    Ext.cmd.derive = function(className, base, data, enumerableMembers, xtypes, xtypesChain, xtypeMap, aliases, mixins, names, createdFn) {
+      var oldCreated, oldExtended;
+      if (!data.controller) {
+        oldDerive.apply(this, arguments);
+        return;
+      }
+      data.$controllers = [data.controller];
+      data.$controllerConfig = {};
+      data.$controllerConfig[data.controller] = data.controllerConfig || {};
+      oldCreated = createdFn;
+      createdFn = function(Class) {
+        Class.override({
+          constructor: createControllerInterceptor()
+        });
+        if (oldCreated) {
+          return oldCreated.apply(this, arguments);
+        }
+      };
+      oldExtended = data.onClassExtended;
+      data.onClassExtended = function(Class, data, hooks) {
+        Deft.Class.hookOnClassCreated(hooks, function(Class) {
+          var controller, _i, _len, _ref;
+          Class.override({
+            constructor: createControllerInterceptor()
+          });
+          if (data.$controllers == null) {
+            data.$controllers = [];
+          }
+          if (data.$controllerConfig == null) {
+            data.$controllerConfig = {};
+          }
+          _ref = Class.superclass.$controllers || [];
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            controller = _ref[_i];
+            data.$controllers.push(controller);
+          }
+          Ext.applyIf(data.$controllerConfig, Class.superclass.$controllerConfig);
+        });
+        if (oldExtended) {
+          return oldExtended.apply(this, arguments);
+        }
+      };
+      return oldDerive.apply(this, arguments);
+    };
+  }
   Deft.Class.registerPreprocessor('controller', function(Class, data, hooks, callback) {
     var self;
     data.$controllers = [data.controller];
